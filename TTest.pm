@@ -6,7 +6,7 @@ use POSIX;
 use vars qw($VERSION $AUTOLOAD);
 use Statistics::Distributions qw (tdistr fdistr tprob fprob);
 use Statistics::PointEstimation;
-
+$VERSION='1.1';
 my %fields=
 (
 	's1'          =>undef,     #sample 1 
@@ -250,7 +250,7 @@ use Statistics::PointEstimation;
 use Statistics::TTest;
 use POSIX;
 @ISA= qw (Statistics::TTest);
-$VERSION = '0.01';
+$VERSION = '1.1';
 
 
 sub load_data{

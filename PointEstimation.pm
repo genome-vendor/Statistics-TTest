@@ -8,7 +8,7 @@ use POSIX;
 
 
 @ISA= qw (Statistics::Descriptive::Full);
-$VERSION = '1.02';
+$VERSION = '1.1';
 my %confidence_interval=  #data related to confidence interval 
 (
 
@@ -139,7 +139,7 @@ use Carp;
 use vars qw($VERSION $AUTOLOAD @ISA);
 use POSIX;
 @ISA=qw (Statistics::PointEstimation);
-
+$VERSION='1.1';
 my %fields=  #data related to confidence interval 
 (
         "count"=>undef, 
