@@ -8,7 +8,7 @@ use POSIX;
 
 
 @ISA= qw (Statistics::Descriptive::Full);
-$VERSION = '1.0';
+$VERSION = '1.02';
 my %confidence_interval=  #data related to confidence interval 
 (
 
@@ -40,20 +40,20 @@ sub new{
 sub compute_confidence_interval{
 	my $self=shift;
 	croak "sample size must be >1 to compute the confidence interval \n" if($self->count()<=1);
-	$self->{confidence}->{'significance'}=95 if (!defined($self->{confidence}->{'significance'}));
-	$self->{confidence}->{df}=$self->count()-1;
-	$self->{confidence}->{alpha}=(100-$self->{confidence}->{significance})/2;
-	$self->{confidence}->{alpha}/=100;
-	$self->{confidence}->{standard_error}=$self->standard_deviation()/sqrt($self->count());
-	$self->{confidence}->{t_value}=abs tdistr($self->{confidence}->{df},$self->{confidence}->{alpha});
-	$self->{confidence}->{delta}=$self->{confidence}->{t_value}*$self->{confidence}->{standard_error};
+	$self->{'significance'}=95 if (!defined($self->{'significance'}));
+	$self->{df}=$self->count()-1;
+	$self->{alpha}=(100-$self->{significance})/2;
+	$self->{alpha}/=100;
+	$self->{standard_error}=$self->standard_deviation()/sqrt($self->count());
+	$self->{t_value}=abs tdistr($self->{df},$self->{alpha});
+	$self->{delta}=$self->{t_value}*$self->{standard_error};
 
-	$self->{confidence}->{upper_clm}=$self->mean() +$self->{confidence}->{delta};
-	$self->{confidence}->{lower_clm}=$self->mean() -$self->{confidence}->{delta};
-	$self->{confidence}->{t_statistic}=$self->{confidence}->{standard_error}
-						?($self->mean()/$self->{confidence}->{standard_error}):0;
-	$self->{confidence}->{t_prob}=1- abs (tprob($self->{confidence}->{df},-1*$self->{confidence}->{t_statistic})-tprob($self->{confidence}->{df},$self->{confidence}->{t_statistic})) ;
-	$self->{confidence}->{valid}=1;
+	$self->{upper_clm}=$self->mean() +$self->{delta};
+	$self->{lower_clm}=$self->mean() -$self->{delta};
+	$self->{t_statistic}=$self->{standard_error}
+						?($self->mean()/$self->{standard_error}):0;
+	$self->{t_prob}=1- abs (tprob($self->{df},-1*$self->{t_statistic})-tprob($self->{df},$self->{t_statistic})) ;
+	$self->{valid}=1;
 	return 1;
 
 }
@@ -67,10 +67,10 @@ sub add_data{
 	else {
 		$aref = \@_;
 	}
-	my $significance=$self->{confidence}->{'significance'} if (defined($self->{confidence}->{'significance'}));
+	my $significance=$self->{'significance'} if (defined($self->{'significance'}));
 	$self->SUPER::add_data($aref);
-	$self->{confidence}->{'significance'}=$significance;
-	$self->compute_confidence_interval() if ($self->count()>1) ;
+	$self->{'significance'}=$significance;
+	$self->compute_confidence_interval() if ((defined($self->{count}))&&($self->{count}>1)) ;
 
 	return 1;
 
@@ -78,8 +78,8 @@ sub add_data{
 sub set_significance{   # set the significance level. usually 90, 95 or 99 
 	my $self=shift;
 	my $significance=shift;
-	$self->{confidence}->{'significance'}=$significance if (($significance>0)&&($significance<100));
-	$self->compute_confidence_interval() if($self->count()>1);
+	$self->{'significance'}=$significance if (($significance>0)&&($significance<100));
+	$self->compute_confidence_interval() if((defined($self->{count}))&&($self->{count}>1));
 	return 1;
 
 }
@@ -88,11 +88,11 @@ sub print_confidence_interval{
 	my $self=shift;
 	print "mean:",$self->mean(),"\n";
 	print "variance:",$self->variance(),"\n";
-	my $confidence=$self->{confidence};
+	my $confidence=\%confidence_interval;
 
 	foreach my $k ( keys %$confidence)
 	{
-		print "$k: $confidence->{$k} \n";
+		print "$k:", $self->{$k}," \n";
 	}
 	return 1;
 
@@ -100,7 +100,7 @@ sub print_confidence_interval{
 
 sub output_confidence_interval{
 	my $self=shift;
-	croak "sample size must be >1 to compute the confidence interval\n" if($self->{confidence}->{valid}!=1);
+	croak "sample size must be >1 to compute the confidence interval\n" if($self->{valid}!=1);
 	my $title=shift;
 	print "Summary  from the observed values of the sample $title:\n";
 	print "\tsample size= ", $self->count()," , degree of freedom=", $self->df(), "\n";
@@ -116,14 +116,15 @@ sub AUTOLOAD{
 	my $type = ref($self)
 	or croak "$self is not an object";
 	my $name = $AUTOLOAD;
+	$self->{_confidence}=\%confidence_interval;
 	$name =~ s/.*://;     
 	return if $name eq "DESTROY";
 	if (exists $self->{_permitted}->{$name} ) {
 		return $self->{$name};
 	}
-	elsif(exists $self->{confidence}->{$name})
+	elsif(exists $self->{'_confidence'}->{$name})
 	{
-		return $self->{confidence}->{$name};
+		return $self->{$name};
 	}
 	else
 	{
@@ -132,15 +133,87 @@ sub AUTOLOAD{
 }
 1;
 
+package Statistics::PointEstimation::Sufficient;
+use strict;
+use Carp;
+use vars qw($VERSION $AUTOLOAD @ISA);
+use POSIX;
+@ISA=qw (Statistics::PointEstimation);
+
+my %fields=  #data related to confidence interval 
+(
+        "count"=>undef, 
+        "mean" =>undef,
+        "variance" => undef,
+        "standard_deviation" =>undef,
+        "significance" => undef,
+        "alpha" => undef,
+        "df" =>undef,
+        "standard_error" => undef,
+        "t_value" =>undef, 
+        "t_statistic" =>undef,
+        "t_prob" =>undef,
+        "delta" =>undef,
+        "upper_clm" => undef,
+        "lower_clm" =>undef,
+        "valid"  =>undef
+);
+
+sub new{
+        my $proto = shift;
+        my $class = ref($proto) || $proto;
+        my $self = {%fields};  
+        bless ($self, $class);  
+        return $self;
+}
+sub add_data{
+
+     croak "the add_data() method is not supported in Statistics::PointEstimation::Sufficient\n";
+
+}
+sub load_data{
+        my $self=shift;
+        my ($count,$mean,$variance)=@_;
+        $self->{count}=$count;
+        $self->{mean}=$mean;
+        $self->{variance}=$variance;
+        $self->{standard_deviation}=sqrt($variance);
+        $self->compute_confidence_interval() if ($self->count()>1) ;
+        return;
+
+}
+
+sub AUTOLOAD{
+        my $self = shift;
+        my $type = ref($self)
+        or croak "$self is not an object";
+        $self->{_confidence}=\%fields;
+        my $name = $AUTOLOAD;
+        $name =~ s/.*://;     
+        return if $name eq "DESTROY";
+
+        if(exists $self->{_confidence}->{$name})
+        {
+                return $self->{$name};
+        }
+        else
+        {
+                croak "Can't access `$name' field in class $type";
+        }
+}
+1;
+ 
 
 __END__
 
 =head1 NAME
 
-Statistics::PointEstimation - Perl module for computing the confidence interval in parameter estimation with Student's T distribution
+Statistics::PointEstimation - Perl module for computing confidence intervals in parameter estimation with Student's T distribution
+Statistics::PointEstimation::Sufficient - Perl module for computing the confidence intervals using sufficient statistics
 
 =head1 SYNOPSIS
 
+  # example for Statistics::PointEstimation
   use Statistics::PointEstimation;
 
   my @r=();
@@ -166,16 +239,35 @@ Statistics::PointEstimation - Perl module for computing the confidence interval 
   " or (",$stat->lower_clm()," to ",$stat->upper_clm," ) with ",$stat->significance," % of confidence\n";
   print "\t t-statistic=T=",$stat->t_statistic()," , Prob >|T|=",$stat->t_prob(),"\n";
 
+  #example for Statistics::PointEstimation::Sufficient
 
+  use strict;
+  use Statistics::PointEstimation;
+  my ($count,$mean,$variance)=(30,3.996,1.235); 
+  my $stat = new Statistics::PointEstimation::Sufficient;
+  $stat->set_significance(99);
+  $stat->load_data($count,$mean,$variance);
+  $stat->output_confidence_interval();
+  $stat->set_significance(95);
+  $stat->output_confidence_interval();
 
 
 =head1 DESCRIPTION
+
+=head2  Statistics::PointEstimation
 
   This module is a subclass of Statistics::Descriptive::Full. It uses T-distribution for point estimation 
   assuming the data is normally distributed or the sample size is sufficiently large. It overrides the 
   add_data() method in Statistics::Descriptive to compute the confidence interval with the specified significance
    level (default is 95%). It also computes the t-statistic=T and Prob>|T| in case of hypothesis 
   testing of paired T-tests.
+
+=head2  Statistics::PointEstimation::Sufficient
+
+ This module is a subclass of Statistics::PointEstimation. Instead of taking the real data points as the input, 
+ it will compute the confidence intervals based on the sufficient statistics and the sample size inputted. 
+ To use this module, you need to pass the sample size, the sample mean , and the sample variance into the load_data()
+ function. The output will be exactly the same as the Statistics::PointEstimation Module.
  
 
 =head1 AUTHOR

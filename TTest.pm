@@ -6,7 +6,7 @@ use POSIX;
 use vars qw($VERSION $AUTOLOAD);
 use Statistics::Distributions qw (tdistr fdistr tprob fprob);
 use Statistics::PointEstimation;
-$VERSION='1.0';
+
 my %fields=
 (
 	's1'          =>undef,     #sample 1 
@@ -76,8 +76,8 @@ sub load_data
 	$self->{'s1'}=$s1;
 	$self->{'s2'}=$s2;
 
-	$self->perform_t_test();
-	return;
+	return $self->perform_t_test();
+	
 
 
 }
@@ -87,37 +87,41 @@ sub perform_t_test
 	my $self=shift;
 	my $s1=$self->s1();
 	my $s2=$self->s2();
-
+	$self->{valid}=0;
 	$self->{significance}=95 if (!defined($self->{significance}));
 	$self->{alpha}=(100-$self->{significance})/2;
         $self->{alpha}/=100;
-	$self->{mean_difference}=$s1->mean()-$s2->mean();
-	$self->{variance}=($s1->df()*$s1->variance()+$s2->df()*$s2->variance)/($s1->df()+$s2->df());
+	$self->{mean_difference}=$s1->{mean}-$s2->{mean};
+	$self->{variance}=($s1->{df}*$s1->{variance}+$s2->{df}*$s2->{variance})/($s1->{df}+$s2->{df});
 	$self->{standard_deviation}=sqrt($self->{variance});
-	$self->{standard_error_equal}=sqrt(1/$s1->count()+1/$s2->count())*$self->{standard_deviation};
-	$self->{standard_error_unequal}=sqrt(($s1->standard_error())**2+($s2->standard_error())**2);
+	$self->{standard_error_equal}=sqrt(1/$s1->{count}+1/$s2->{count})*$self->{standard_deviation};
+	$self->{standard_error_unequal}=sqrt(($s1->{standard_error})**2+($s2->{standard_error})**2);
 
-	$self->{df_equal}=$s1->df()+$s2->df();
-	$self->{df_unequal}= (($s1->standard_error())**2+($s2->standard_error())**2)**2
-				/
-			    (($s1->standard_error())**4/$s1->df()+($s2->standard_error())**4/$s2->df());
+	$self->{df_equal}=$s1->{df}+$s2->{df};
+	$self->{df_unequal}= (($s1->{standard_error})**4/$s1->{df}+($s2->{standard_error})**4/$s2->{df})?
+				 ((($s1->{standard_error})**2+($s2->{standard_error})**2)**2
+				   /
+			           (($s1->{standard_error})**4/$s1->{df}+($s2->{standard_error})**4/$s2->{df})) :
+				 ($self->{df_equal});
 
-	$self->{t_statistic_equal}= abs ($self->{mean_difference}/$self->{standard_error_equal});
-	$self->{t_statistic_unequal}= abs ($self->{mean_difference}/$self->{standard_error_unequal});
+	$self->{t_statistic_equal}=($self->{standard_error_equal})?
+				   (abs ($self->{mean_difference}/$self->{standard_error_equal})):99;
+	$self->{t_statistic_unequal}=($self->{standard_error_unequal})?
+				   (abs ($self->{mean_difference}/$self->{standard_error_unequal})):99;
 	my ($df1,$df2);
-	if($s1->variance()>=$s2->variance())
+	if($s1->{variance}>=$s2->{variance})
 	{
-		$df1=$s1->df();
-		$df2=$s2->df();
-		$self->{f_statistic}=$s1->variance()/$s2->variance();
+		$df1=$s1->{df};
+		$df2=$s2->{df};
+		$self->{f_statistic}=($s2->{variance})?($s1->{variance}/$s2->{variance}):99;
 
 	}
 	else
 	{
 	
-		$df1=$s2->df();
-		$df2=$s1->df();
-		$self->{f_statistic}=$s2->variance()/$s1->variance();
+		$df1=$s2->{df};
+		$df2=$s1->{df};
+		$self->{f_statistic}=($s1->{variance})?($s2->{variance}/$s1->{variance}):99;
 	}
 	($self->{df1},$self->{df2})=($df1,$df2);
 	$self->{f_cutoff}=fdistr($df1,$df2,$self->{alpha});
@@ -156,8 +160,8 @@ sub perform_t_test
 	$self->{delta}=$self->t_value()*$self->standard_error();
 	$self->{lower_clm}=$self->{mean_difference}-$self->{delta};
 	$self->{upper_clm}=$self->{mean_difference}+$self->{delta};
-	$self->{valid}=1;
-	return;
+	$self->{valid}=1 if (($s1->{variance})&&($s2->{variance}));
+	return !($self->{valid});
 
 }
 
@@ -177,7 +181,7 @@ sub output_t_test
 	my $self=shift;
 	my $s1=$self->{s1};
 	my $s2=$self->{s2};
-	croak "no data. s1 or s2 is empty.\n" if ((!defined($s1))||(!defined($s2))||($self->valid!=1));
+	croak "no data. s1 or s2 is empty or the variance =0.\n" if ((!defined($s1))||(!defined($s2))||($self->valid!=1));
 	print "*****************************************************\n\n";
 	$s1->output_confidence_interval('1');
 	print "*****************************************************\n\n";
@@ -236,15 +240,58 @@ sub AUTOLOAD
 }
 
 1;
+
+#perform t-test using sufficient statistics
+package Statistics::TTest::Sufficient;
+use strict;
+use Carp;
+use vars qw($VERSION @ISA $AUTOLOAD);
+use Statistics::PointEstimation;
+use Statistics::TTest;
+use POSIX;
+@ISA= qw (Statistics::TTest);
+$VERSION = '0.01';
+
+
+sub load_data{
+	my $self=shift;
+        undef $self->{valid};
+        my ($sample1,$sample2)=@_;
+
+        
+        my $s1= new Statistics::PointEstimation::Sufficient;
+        my $s2= new Statistics::PointEstimation::Sufficient;
+
+        if($self->significance())
+        {
+                $s1->set_significance($self->significance());
+                $s2->set_significance($self->significance());
+        }
+        
+        $s1->load_data($sample1->{count},$sample1->{mean},$sample1->{variance});
+        $s2->load_data($sample2->{count},$sample2->{mean},$sample2->{variance});
+        
+        croak "Invalid sample size.  sample size for the 2 samples are",$s1->count," and ",$s2->count() ,
+              ". the sample size must be greater than 1" if(($s1->count() <=1)||($s2->count() <=1 ));
+        $self->{'s1'}=$s1;
+        $self->{'s2'}=$s2;
+                
+        return $self->perform_t_test();
+        
+
+}
+
+1;
 __END__
 
 =head1 NAME
 
  Statistics::TTest - Perl module to perform T-test on 2 independent samples
-
+ Statistics::TTest::Sufficient - Perl module to perfrom T-Test on 2 indepdent samples using sufficient statistics
 
 =head1 SYNOPSIS
-
+ 
+ #example for Statistics::TTest
  use Statistics::PointEstimation;
  use Statistics::TTest;
  my @r1=();
@@ -268,37 +315,74 @@ __END__
  $ttest->set_significance(99);
  $ttest->print_t_test();  #list out t-test related data
   
- #the following thes same as calling output_t_test()
-        my $s1=$ttest->{s1};  #sample 1  a Statistics::PointEstimation object
-        my $s2=$ttest->{s2};  #sample 2  a Statistics::PointEstimation object
-        print "*****************************************************\n\n";
-        $s1->output_confidence_interval('1');
-        print "*****************************************************\n\n";
-        $s2->output_confidence_interval('2');
-        print "*****************************************************\n\n";
+ #the following thes same as calling output_t_test() (you can check if $ttest->{valid}==1 to check if the data is valid.)
+ my $s1=$ttest->{s1};  #sample 1  a Statistics::PointEstimation object
+ my $s2=$ttest->{s2};  #sample 2  a Statistics::PointEstimation object
+ print "*****************************************************\n\n";
+ $s1->output_confidence_interval('1');
+ print "*****************************************************\n\n";
+ $s2->output_confidence_interval('2');
+ print "*****************************************************\n\n";
+ 
+ print "Comparison of these 2 independent samples.\n";
+ print "\t F-statistic=",$ttest->f_statistic()," , cutoff F-statistic=",$ttest->f_cutoff(),
+ 	" with alpha level=",$ttest->alpha*2," and  df =(",$ttest->df1,",",$ttest->df2,")\n"; 
+ if($ttest->{equal_variance})
+ { print "\tequal variance assumption is accepted(not rejected) since F-statistic < cutoff F-statistic\n";}
+ else
+ { print "\tequal variance assumption is  rejected since F-statistic > cutoff F-statistic\n";}
+ 
+ print "\tdegree of freedom=",$ttest->df," , t-statistic=T=",$ttest->t_statistic," Prob >|T|=",$ttest->{t_prob},"\n";
+ print "\tthe null hypothesis (the 2 samples have the same mean) is ",$ttest->null_hypothesis(),
+ 	 " since the alpha level is ",$ttest->alpha()*2,"\n";
+ print "\tdifference of the mean=",$ttest->mean_difference(),", standard error=",$ttest->standard_error(),"\n";
+ print "\t the estimate of the difference of the mean is ", $ttest->mean_difference()," +/- ",$ttest->delta(),"\n\t",
+ 	" or (",$ttest->lower_clm()," to ",$ttest->upper_clm," ) with ",$ttest->significance," % of confidence\n"; 
+ 
+ #example for Statistics::TTest::Sufficient
+ use Statistics::PointEstimation;
+ use Statistics::TTest;
+        
+ my %sample1=(
+        'count' =>30,
+        'mean' =>3.98,
+        'variance' =>2.63
+                );
 
-        print "Comparison of these 2 independent samples.\n";
-        print "\t F-statistic=",$ttest->f_statistic()," , cutoff F-statistic=",$ttest->f_cutoff(),
-                " with alpha level=",$ttest->alpha*2," and  df =(",$ttest->df1,",",$ttest->df2,")\n"; 
-        if($ttest->{equal_variance})
-        { print "\tequal variance assumption is accepted(not rejected) since F-statistic < cutoff F-statistic\n";}
-        else
-        { print "\tequal variance assumption is  rejected since F-statistic > cutoff F-statistic\n";}
+ my %sample2=(
+        'count'=>30,
+        'mean'=>3.67,
+        'variance'=>1.12
+        );
 
-        print "\tdegree of freedom=",$ttest->df," , t-statistic=T=",$ttest->t_statistic," Prob >|T|=",$ttest->{t_prob},"\n";
-        print "\tthe null hypothesis (the 2 samples have the same mean) is ",$ttest->null_hypothesis(),
-                 " since the alpha level is ",$ttest->alpha()*2,"\n";
-        print "\tdifference of the mean=",$ttest->mean_difference(),", standard error=",$ttest->standard_error(),"\n";
-        print "\t the estimate of the difference of the mean is ", $ttest->mean_difference()," +/- ",$ttest->delta(),"\n\t",
-                " or (",$ttest->lower_clm()," to ",$ttest->upper_clm," ) with ",$ttest->significance," % of confidence\n"; 
-  
 
+ my $ttest = new Statistics::TTest::Sufficient;  
+ $ttest->set_significance(90);
+ $ttest->load_data(\%sample1,\%sample2);  
+ $ttest->output_t_test();
+ #$ttest->s1->print_confidence_interval();
+ $ttest->set_significance(99);
+ $ttest->output_t_test();
+ #$ttest->s1->print_confidence_interval();   
 
 
 =head1 DESCRIPTION
 
-This is the Statistical T-Test module to compare 2 independent samples. It takes 2 array of point measures, compute the confidence
- intervals using the PointEstimation module (which is also included in this package) and use the T-statistic to test the null hypothesis. If the null hypothesis is rejected, the difference will be given as the lower_clm and upper_clm of the TTest object. 
+=head2 Statistics::TTest
+
+ This is the Statistical T-Test module to compare 2 independent samples. It takes 2 array of point measures, 
+ compute the confidence intervals using the PointEstimation module (which is also included in this package)
+  and use the T-statistic to test the null hypothesis. If the null hypothesis is rejected, the difference 
+  will be given as the lower_clm and upper_clm of the TTest object. 
+
+=head2 Statistics::TTest::Sufficient
+
+ This module is a subclass of Statistics::TTest. Instead of taking the real data points as the input, 
+ it will compute the confidence intervals based on the sufficient statistics and the sample size inputted. 
+ To use this module, you need to pass the sample size, the sample mean , and the sample variance into the load_data()
+ function. The output will be exactly the same as the Statistics::TTest Module.
+ 
+
 
 =head1 AUTHOR
 
