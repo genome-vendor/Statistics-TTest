@@ -1,0 +1,20 @@
+Source: libstatistics-ttest-perl
+Section: perl
+Priority: optional
+Build-Depends: debhelper (>= 7)
+Build-Depends-Indep: perl, libstatistics-distributions-perl (>= 0.07),
+  libstatistics-descriptive-perl (>= 2.6)
+Maintainer: vagrant <vagrant@>
+Standards-Version: 3.8.3
+Homepage: http://search.cpan.org/dist/Statistics-TTest/
+
+Package: libstatistics-ttest-perl
+Architecture: all
+Depends: ${perl:Depends}, ${misc:Depends},
+  libstatistics-distributions-perl (>= 0.07),
+  libstatistics-descriptive-perl (>= 2.6)
+Description: Perl module for computing confidence intervals in parameter estimation with Student's T distribution
+ Perl module for computing confidence intervals in parameter estimation with
+ Student's T distribution
+ .
+ This description was automagically extracted from the module by dh-make-perl.
